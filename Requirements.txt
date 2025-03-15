@@ -4,4 +4,4 @@ SQLAlchemy
 Flask-Mail
 Flask-SQLAlchemy
 APScheduler
-
+pytest
