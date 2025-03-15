@@ -1,10 +1,23 @@
+import atexit
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Initialize extensions
 db = SQLAlchemy()
 mail = Mail()
+
+# Import your overdue notification function
+from app.notify_overdue import notify_overdue_function  # Adjust path if necessary
+
+def start_scheduler(app):
+    scheduler = BackgroundScheduler()
+    # Schedule the overdue notification function to run every minute
+    scheduler.add_job(func=notify_overdue_function, trigger='interval', minutes=1)
+    scheduler.start()
+    # Shut down the scheduler when exiting the app
+    atexit.register(lambda: scheduler.shutdown())
 
 def create_app():
     app = Flask(__name__)
@@ -16,10 +29,11 @@ def create_app():
     db.init_app(app)
     mail.init_app(app)
     
-    # Import and register routes (we'll add more later)
+    # Import and register blueprints/routes
     from app.routes import main
     app.register_blueprint(main)
     
-    from app import models
+    # Start the scheduler for background tasks
+    start_scheduler(app)
     
     return app

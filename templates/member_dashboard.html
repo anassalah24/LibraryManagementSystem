@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Member Dashboard - Library Management System</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* Siemens color palette adjustments */
+    .navbar {
+      background-color: #0072C6;
+    }
+    .navbar-brand, .navbar-nav .nav-link {
+      color: #ffffff !important;
+    }
+    .card {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg">
+    <a class="navbar-brand" href="#">SIEMENS LMS</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <button id="cancelMembership" class="btn btn-danger">Cancel Membership</button>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/logout">Logout</a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <div class="container mt-4">
+    <h2>Welcome, {{ username }}!</h2>
+    <p>Your Member Dashboard</p>
+    <!-- Error Message contained -->
+    <div id="messageContainer" class="mt-3"></div>
+    <!-- Search Books Section -->
+    <div class="card">
+      <div class="card-header">
+        Search Books
+      </div>
+      <div class="card-body">
+        <form id="searchForm">
+          <div class="form-row">
+            <div class="form-group col-md-4">
+              <input type="text" class="form-control" id="searchTitle" placeholder="Title">
+            </div>
+            <div class="form-group col-md-4">
+              <input type="text" class="form-control" id="searchAuthor" placeholder="Author">
+            </div>
+            <div class="form-group col-md-4">
+              <input type="text" class="form-control" id="searchSubject" placeholder="Subject">
+            </div>
+          </div>
+          <div class="form-group col-md-3">
+            <label for="searchFromDate">From Publication Date</label>
+            <input type="date" class="form-control" id="searchFromDate" placeholder="From Publication Date">
+          </div>
+          <div class="form-group col-md-3">
+            <label for="searchToDate">To Publication Date</label>
+            <input type="date" class="form-control" id="searchToDate" placeholder="To Publication Date">
+          </div>
+          
+          <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+        <div id="searchResults" class="mt-3"></div>
+      </div>
+    </div>
+
+    <!-- Current Loans Section -->
+    <div class="card">
+      <div class="card-header">
+        My Current Loans
+      </div>
+      <div class="card-body" id="loansSection">
+        <p>Loading your current loans...</p>
+      </div>
+    </div>
+
+    <!-- Reservations Section -->
+    <div class="card">
+      <div class="card-header">
+        My Reservations
+      </div>
+      <div class="card-body" id="reservationsSection">
+        <p>Loading your reservations...</p>
+      </div>
+    </div>
+  </div>
+  <!-- Detailed Book Info Modal -->
+  <div class="modal fade" id="bookDetailsModal" tabindex="-1" role="dialog" aria-labelledby="bookDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="bookDetailsModalLabel">Book Details</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="bookDetailsContent">
+          <!-- Book details will be loaded here dynamically -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- jQuery and Bootstrap JS -->
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <!-- Custom JS for dynamic data integration -->
+  <script>
+    $(document).ready(function(){
+      // Placeholder: Replace with dynamic user id from session
+      const userId = "{{ user_id|tojson }}";
+
+      // Function to load active loans
+      function loadLoans() {
+        $.ajax({
+          url: '/transactions',
+          type: 'GET',
+          data: { user_id: userId, active: true },
+          success: function(response) {
+            let output = '';
+            if(response.transactions && response.transactions.length > 0) {
+              output += '<table class="table table-striped"><thead><tr><th>Book Title</th><th>Date Issued</th><th>Due Date</th><th>Actions</th></tr></thead><tbody>';
+              response.transactions.forEach(function(loan) {
+                output += `<tr>
+                  <td>${loan.book_title}</td>
+                  <td>${loan.date_issued}</td>
+                  <td>${loan.due_date}</td>
+                  <td>
+                    <button class="btn btn-sm btn-warning renewLoan" data-id="${loan.transaction_id}">Renew</button>
+                    <button class="btn btn-sm btn-danger returnLoan" data-copy-id="${loan.book_copy_id}">Return</button>
+                  </td>
+                </tr>`;
+              });
+              output += '</tbody></table>';
+            } else {
+              output = '<p>You have no active loans.</p>';
+            }
+            $('#loansSection').html(output);
+          },
+          error: function() {
+            $('#loansSection').html('<div class="alert alert-danger">Error loading loans.</div>');
+          }
+        });
+      }
+
+      // Function to load active reservations
+      function loadReservations() {
+        $.ajax({
+          url: '/reservations',
+          type: 'GET',
+          data: { user_id: userId, active: true },
+          success: function(response) {
+            let output = '';
+            if(response.reservations && response.reservations.length > 0) {
+              output += '<table class="table table-striped"><thead><tr><th>Book Title</th><th>Reservation Date</th><th>Status</th></tr></thead><tbody>';
+              response.reservations.forEach(function(res) {
+                output += `<tr>
+                  <td>${res.book_title}</td>
+                  <td>${res.reservation_date}</td>
+                  <td>${res.status}</td>
+                </tr>`;
+              });
+              output += '</tbody></table>';
+            } else {
+              output = '<p>You have no active reservations.</p>';
+            }
+            $('#reservationsSection').html(output);
+          },
+          error: function() {
+            $('#reservationsSection').html('<div class="alert alert-danger">Error loading reservations.</div>');
+          }
+        });
+      }
+
+      // Initial load of loans and reservations
+      loadLoans();
+      loadReservations();
+
+      // Search functionality
+      $('#searchForm').on('submit', function(e){
+        e.preventDefault();
+        
+        const title = $('#searchTitle').val();
+        const author = $('#searchAuthor').val();
+        const subject = $('#searchSubject').val();
+        const fromDate = $('#searchFromDate').val();
+        const toDate = $('#searchToDate').val();
+        let queryParams = [];
+        if (title) queryParams.push("title=" + title);
+        if (author) queryParams.push("author=" + author);
+        if (subject) queryParams.push("subject=" + subject);
+        if (fromDate) queryParams.push("from_date=" + encodeURIComponent(fromDate));
+        if (toDate) queryParams.push("to_date=" + encodeURIComponent(toDate));
+        const queryString = queryParams.join('&');
+        
+        $.ajax({
+          url: '/books?' + queryString,
+          type: 'GET',
+          success: function(response){
+            let output = '<ul class="list-group">';
+            if(response.books && response.books.length > 0) {
+              response.books.forEach(function(book){
+                output += `<li class="list-group-item">
+                            <a href="#" class="viewBookDetails" data-id="${book.id}">
+                              <strong>${book.title}</strong>
+                            </a> by ${book.author} <br>
+                            <small>Subject: ${book.subject} | Published: ${book.publication_date}</small>
+                            <br>
+                            <button class="btn btn-sm btn-primary checkoutBook" data-id="${book.id}">Check Out</button>
+                            <button class="btn btn-sm btn-secondary reserveBook" data-id="${book.id}">Reserve</button>
+                          </li>`;
+              });
+            } else {
+              output += '<li class="list-group-item">No books found.</li>';
+            }
+            output += '</ul>';
+            $('#searchResults').html(output);
+          },
+          error: function(){
+            $('#searchResults').html('<div class="alert alert-danger">Error retrieving books.</div>');
+          }
+        });
+
+
+      // Handle Renew action from active loans
+      $(document).on('click', '.renewLoan', function(){
+        const transactionId = $(this).data('id');
+        $.ajax({
+          url: '/renew',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ transaction_id: transactionId, user_id: userId }),
+          success: function(response) {
+            displayMessage('info', "Loan renewed. New due date: " + response.new_due_date);
+            loadLoans();
+          },
+          error: function(xhr) {
+            displayMessage('danger', "Failed to renew loan: " + (xhr.responseJSON.error || 'Error'));
+          }
+        });
+      });
+
+      // Handle Return action from active loans
+      $(document).on('click', '.returnLoan', function(){
+        const bookCopyId = $(this).data('copy-id');
+        $.ajax({
+          url: '/return',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ user_id: userId, book_copy_id: bookCopyId }),
+          success: function(response) {
+            displayMessage('success', "Book returned. Fine: $" + response.fine_amount);
+            loadLoans();
+            loadReservations();
+          },
+          error: function(xhr) {
+            displayMessage('danger', "Failed to return book: " + (xhr.responseJSON.error || 'Error'));
+          }
+        });
+      });
+
+      // Handle Check Out from search results
+      $(document).on('click', '.checkoutBook', function(){
+        const bookId = $(this).data('id');
+        $.ajax({
+          url: '/checkout',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ user_id: userId, book_id: bookId }),
+          success: function(response) {
+            displayMessage('success', "Book checked out. Due date: " + response.due_date);
+            loadLoans();
+          },
+          error: function(xhr) {
+            displayMessage('danger', "Failed to check out book: " + (xhr.responseJSON.error || 'Error'));
+          }
+        });
+      });
+
+      // Handle Reserve from search results
+      $(document).on('click', '.reserveBook', function(){
+        const bookId = $(this).data('id');
+        $.ajax({
+          url: '/reserve',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ user_id: userId, book_id: bookId }),
+          success: function(response) {
+            displayMessage('success', "Book reserved successfully!");
+            loadReservations();
+          },
+          error: function(xhr) {
+            displayMessage('danger', "Failed to reserve book: " + (xhr.responseJSON.error || 'Error'));
+          }
+        });
+      });
+    });
+
+      $(document).on('click', '.viewBookDetails', function(e){
+        e.preventDefault();  // Prevent the default anchor behavior
+        const bookId = $(this).data('id');
+        
+        $.ajax({
+          url: '/books/' + bookId,
+          type: 'GET',
+          success: function(response) {
+            if(response.book) {
+              const details = response.book;
+              // Build the HTML for the detailed view
+              let html = `<p><strong>Title:</strong> ${details.title}</p>
+                          <p><strong>Author:</strong> ${details.author}</p>
+                          <p><strong>Subject:</strong> ${details.subject}</p>
+                          <p><strong>Publication Date:</strong> ${details.publication_date}</p>
+                          <p><strong>Rack Location:</strong> ${details.rack_location}</p>`;
+              $('#bookDetailsContent').html(html);
+              // Open the modal
+              $('#bookDetailsModal').modal('show');
+            } else {
+              displayMessage('danger', 'Book details not found.');
+            }
+          },
+          error: function() {
+            displayMessage('danger', 'Error retrieving book details.');
+          }
+        });
+      });
+    });
+
+    $('#cancelMembership').on('click', function(){
+      if(confirm('Are you sure you want to cancel your membership? This action cannot be undone.')) {
+        $.ajax({
+          url: '/cancel_membership',
+          type: 'POST',
+          contentType: 'application/json',
+          success: function(response) {
+            displayMessage('success', response.message);
+            // Redirect to login page since membership is canceled
+            setTimeout(function(){
+              window.location.href = '/login';
+            }, 2000);
+          },
+          error: function(xhr) {
+            displayMessage('danger', xhr.responseJSON.error || 'Failed to cancel membership.');
+          }
+        });
+      }
+    });
+
+    function displayMessage(type, message) {
+    // type can be 'success', 'danger', 'info', etc.
+    const html = `<div class="alert alert-${type}" role="alert">${message}</div>`;
+    $('#messageContainer').html(html);
+    // Scroll to top of page or to the message container
+    $('html, body').animate({ scrollTop: $('#messageContainer').offset().top }, 500);
+    // Optionally, auto-hide after a few seconds:
+    setTimeout(function(){
+      $('#messageContainer').html('');
+    }, 10000);
+    }
+
+  </script>
+</body>
+</html>

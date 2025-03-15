@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Librarian Dashboard - Library Management System</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* Siemens color palette adjustments */
+    .navbar {
+      background-color: #0072C6;
+    }
+    .navbar-brand, .navbar-nav .nav-link {
+      color: #ffffff !important;
+    }
+    .card {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg">
+    <a class="navbar-brand" href="#">LibraryMS</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/books/manage">Manage Books</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/member_management">Manage Users</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/logout">Logout</a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <div class="container mt-4">
+    <h2>Welcome, {{ username }}!</h2>
+    <p>Your Librarian Dashboard</p>
+
+    <!-- Active Transactions Section -->
+    <div class="card">
+      <div class="card-header">
+        Active Transactions
+      </div>
+      <div class="card-body" id="transactionsSection">
+        <p>Loading active transactions...</p>
+      </div>
+    </div>
+
+    <!-- Book Reservations Section -->
+    <div class="card">
+      <div class="card-header">
+        Book Reservations
+      </div>
+      <div class="card-body" id="reservationsSection">
+        <p>Loading book reservations...</p>
+      </div>
+    </div>
+
+    <!-- Inventory Overview Section -->
+    <div class="card">
+      <div class="card-header">
+        Book Inventory Overview
+      </div>
+      <div class="card-body" id="inventorySection">
+        <p>Loading inventory overview...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- jQuery and Bootstrap JS -->
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <!-- Custom JS for dynamic data integration in librarian dashboard -->
+  <script>
+    $(document).ready(function(){
+      // Load Active Transactions with detailed user info
+      function loadTransactions() {
+        $.ajax({
+          url: '/transactions',
+          type: 'GET',
+          data: { all: true },
+          success: function(response) {
+            let output = '';
+            if(response.transactions && response.transactions.length > 0) {
+              output += '<table class="table table-striped"><thead><tr>';
+              output += '<th>Transaction ID</th>';
+              output += '<th>Book Title</th>';
+              output += '<th>User ID</th>';
+              output += '<th>Username</th>';
+              output += '<th>Email</th>';
+              output += '<th>Membership Status</th>';
+              output += '<th>Date Issued</th>';
+              output += '<th>Due Date</th>';
+              output += '<th>Status</th>';
+              output += '</tr></thead><tbody>';
+              response.transactions.forEach(function(tx) {
+                let status = tx.date_returned ? 'Returned' : 'Active';
+                output += `<tr>
+                  <td>${tx.transaction_id}</td>
+                  <td>${tx.book_title}</td>
+                  <td>${tx.user_id}</td>
+                  <td>${tx.username}</td>
+                  <td>${tx.email}</td>
+                  <td>${tx.membership_status}</td>
+                  <td>${tx.date_issued}</td>
+                  <td>${tx.due_date}</td>
+                  <td>${status}</td>
+                </tr>`;
+              });
+              output += '</tbody></table>';
+            } else {
+              output = '<p>No transactions found.</p>';
+            }
+            $('#transactionsSection').html(output);
+          },
+          error: function() {
+            $('#transactionsSection').html('<div class="alert alert-danger">Error loading transactions.</div>');
+          }
+        });
+      }
+
+      // Load Book Reservations with detailed user info
+      function loadReservations() {
+        $.ajax({
+          url: '/reservations',
+          type: 'GET',
+          data: { all: true },
+          success: function(response) {
+            let output = '';
+            if(response.reservations && response.reservations.length > 0) {
+              output += '<table class="table table-striped"><thead><tr>';
+              output += '<th>Reservation ID</th>';
+              output += '<th>Book Title</th>';
+              output += '<th>User ID</th>';
+              output += '<th>Username</th>';
+              output += '<th>Email</th>';
+              output += '<th>Membership Status</th>';
+              output += '<th>Reservation Date</th>';
+              output += '<th>Status</th>';
+              output += '</tr></thead><tbody>';
+              response.reservations.forEach(function(res) {
+                output += `<tr>
+                  <td>${res.reservation_id}</td>
+                  <td>${res.book_title}</td>
+                  <td>${res.user_id}</td>
+                  <td>${res.username}</td>
+                  <td>${res.email}</td>
+                  <td>${res.membership_status}</td>
+                  <td>${res.reservation_date}</td>
+                  <td>${res.status}</td>
+                </tr>`;
+              });
+              output += '</tbody></table>';
+            } else {
+              output = '<p>No reservations found.</p>';
+            }
+            $('#reservationsSection').html(output);
+          },
+          error: function() {
+            $('#reservationsSection').html('<div class="alert alert-danger">Error loading reservations.</div>');
+          }
+        });
+      }
+
+      // Load Inventory Overview remains the same
+      function loadInventory() {
+        $.ajax({
+          url: '/inventory',
+          type: 'GET',
+          success: function(response) {
+            let output = '';
+            if(response.inventory) {
+              output += '<ul class="list-group">';
+              output += `<li class="list-group-item">Total Books: ${response.inventory.total_books}</li>`;
+              output += `<li class="list-group-item">Books Available: ${response.inventory.available_books}</li>`;
+              output += `<li class="list-group-item">Books Checked Out: ${response.inventory.checked_out_books}</li>`;
+              output += '</ul>';
+            } else {
+              output = '<p>No inventory data available.</p>';
+            }
+            $('#inventorySection').html(output);
+          },
+          error: function() {
+            $('#inventorySection').html('<div class="alert alert-danger">Error loading inventory overview.</div>');
+          }
+        });
+      }
+
+      // Initial load of all sections
+      loadTransactions();
+      loadReservations();
+      loadInventory();
+    });
+  </script>
+</body>
+</html>

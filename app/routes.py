@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 from app import db
 from app.models import User , Book , BookCopy , Transaction , BookCopy , Reservation
 from app.notifications import send_email_notification
-
+from flask import session
+from flask import redirect, url_for
 
 
 main = Blueprint('main', __name__, template_folder='../templates')
@@ -12,6 +13,47 @@ main = Blueprint('main', __name__, template_folder='../templates')
 @main.route('/')
 def index():
     return render_template('index.html')
+
+@main.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('main.login_page'))
+
+#Loads the Members Dashboard page
+@main.route('/dashboard')
+def member_dashboard():
+    if 'user_id' not in session or session.get('role') != 'member':
+        return redirect(url_for('main.login_page'))
+    username = session.get('username', 'MemberUser')
+    # Pass the logged-in user's id to the template for AJAX calls
+    return render_template('member_dashboard.html', username=username, user_id=session.get('user_id'))
+
+
+#Loads the Librarian Dashboard page
+@main.route('/librarian')
+def librarian_dashboard():
+    if 'user_id' not in session or session.get('role') != 'librarian':
+        return redirect(url_for('main.login_page'))
+    username = session.get('username', 'LibrarianUser')
+    return render_template('librarian_dashboard.html', username=username, user_id=session.get('user_id'))
+
+@main.route('/books/manage')
+def manage_books():
+    # For simplicity, we pass a placeholder librarian username.
+    username = "LibrarianUser"
+    return render_template('manage_books.html', username=username)
+
+#manage members
+@main.route('/member_management')
+def member_management():
+    # Here you could add any authentication checks if necessary
+    return render_template('member_management.html')
+
+
+#Loads the register page
+@main.route('/register', methods=['GET'])
+def register_page():
+    return render_template('register.html')
 
 # Endpoint for user registration
 @main.route('/register', methods=['POST'])
@@ -42,25 +84,37 @@ def register():
     
     return jsonify({'message': 'User registered successfully'}), 201
 
+#Loads the login page
+@main.route('/login', methods=['GET'])
+def login_page():
+    return render_template('login.html')
+
+
 # Endpoint for user login
 @main.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    
-    # Retrieve login credentials
     username_or_email = data.get('username_or_email')
     password = data.get('password')
     
     if not username_or_email or not password:
         return jsonify({'error': 'Missing username/email or password'}), 400
     
-    # Try to find user by username or email
     user = User.query.filter((User.username == username_or_email) | (User.email == username_or_email)).first()
     
     if not user or not check_password_hash(user.password, password):
         return jsonify({'error': 'Invalid credentials'}), 401
     
-    # For now, we simply return a success message. In a real application, you'd return a token or session data.
+       
+    # Check membership status for members
+    if user.role == 'member' and not user.is_active:
+        return jsonify({'error': 'Your membership is canceled. Please contact the library.'}), 403
+    
+    # Set session variables
+    session['user_id'] = user.id
+    session['username'] = user.username
+    session['role'] = user.role
+
     return jsonify({'message': 'Login successful', 'user': {'username': user.username, 'role': user.role}}), 200
 
 
@@ -131,6 +185,7 @@ def update_book(book_id):
     return jsonify({'message': 'Book updated successfully'}), 200
 
 
+
 # Endpoint for deleting a book (Librarian only)
 @main.route('/books/<int:book_id>', methods=['DELETE'])
 def delete_book(book_id):
@@ -152,7 +207,8 @@ def search_books():
     title = request.args.get('title')
     author = request.args.get('author')
     subject = request.args.get('subject')
-    publication_date = request.args.get('publication_date')  # Expecting YYYY-MM-DD format
+    from_date_str = request.args.get('from_date')
+    to_date_str = request.args.get('to_date')
 
     # Build query dynamically based on provided filters
     query = Book.query
@@ -162,12 +218,20 @@ def search_books():
         query = query.filter(Book.author.ilike(f'%{author}%'))
     if subject:
         query = query.filter(Book.subject.ilike(f'%{subject}%'))
-    if publication_date:
+    # Filter by publication date range if provided
+    if from_date_str:
         try:
-            pub_date = datetime.strptime(publication_date, '%Y-%m-%d').date()
-            query = query.filter(Book.publication_date == pub_date)
+            from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
+            query = query.filter(Book.publication_date >= from_date)
         except ValueError:
-            return jsonify({'error': 'Invalid publication date format. Use YYYY-MM-DD.'}), 400
+            return jsonify({'error': 'Invalid from_date format. Use YYYY-MM-DD.'}), 400
+
+    if to_date_str:
+        try:
+            to_date = datetime.strptime(to_date_str, '%Y-%m-%d').date()
+            query = query.filter(Book.publication_date <= to_date)
+        except ValueError:
+            return jsonify({'error': 'Invalid to_date format. Use YYYY-MM-DD.'}), 400
 
     books = query.all()
     results = []
@@ -228,32 +292,32 @@ def checkout_book():
     }), 201
 
 # Endpoint for renewing a checked-out book
+from datetime import datetime, timedelta
+
 @main.route('/renew', methods=['POST'])
 def renew_book():
     data = request.get_json()
     transaction_id = data.get('transaction_id')
     user_id = data.get('user_id')
 
-    # Validate inputs
     if not transaction_id or not user_id:
         return jsonify({'error': 'Missing transaction_id or user_id'}), 400
 
-    # Find the transaction record
+    # Find the active transaction for this user
     transaction = Transaction.query.filter_by(id=transaction_id, user_id=user_id, date_returned=None).first()
     if not transaction:
         return jsonify({'error': 'Active transaction not found for this user and transaction ID'}), 404
 
-    # Extend due date by 10 days from now
-    new_due_date = datetime.utcnow() + timedelta(days=10)
-    transaction.due_date = new_due_date
-    # Update the transaction type if needed (optional)
+    # Add 10 days to the **current due date**
+    transaction.due_date = transaction.due_date + timedelta(days=10)
     transaction.transaction_type = 'renew'
     db.session.commit()
 
     return jsonify({
         'message': 'Book renewed successfully',
-        'new_due_date': new_due_date.strftime('%Y-%m-%d %H:%M:%S')
+        'new_due_date': transaction.due_date.strftime('%Y-%m-%d %H:%M:%S')
     }), 200
+
 
 # Endpoint for returning a book
 @main.route('/return', methods=['POST'])
@@ -261,6 +325,7 @@ def return_book():
     data = request.get_json()
     user_id = data.get('user_id')
     book_copy_id = data.get('book_copy_id')
+    print("Return Request - user_id:", user_id, "book_copy_id:", book_copy_id)
 
     # Validate inputs
     if not user_id or not book_copy_id:
@@ -321,6 +386,11 @@ def reserve_book():
     # Validate inputs
     if not user_id or not book_id:
         return jsonify({'error': 'Missing user_id or book_id'}), 400
+    
+    # Check if there's at least one available copy
+    available_copy = BookCopy.query.filter_by(book_id=book_id, status='available').first()
+    if available_copy:
+        return jsonify({'error': 'Copies are available. Please check out the book instead of reserving it.'}), 400
 
     # Check if there's already an active reservation for the same book by this user
     existing_reservation = Reservation.query.filter_by(user_id=user_id, book_id=book_id, status='active').first()
@@ -333,3 +403,183 @@ def reserve_book():
     db.session.commit()
 
     return jsonify({'message': 'Reservation created successfully', 'reservation_id': reservation.id}), 201
+
+#Endpoint to return loans of a certain user
+@main.route('/transactions', methods=['GET'])
+def get_transactions():
+    # Check if 'all=true' parameter is provided, otherwise filter by user_id
+    if request.args.get('all', 'false').lower() == 'true':
+        query = Transaction.query
+    else:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'user_id parameter is required'}), 400
+        query = Transaction.query.filter_by(user_id=user_id)
+    
+    # Optionally, filter for active transactions only
+    if request.args.get('active', 'false').lower() == 'true':
+        query = query.filter(Transaction.date_returned == None)
+    
+    transactions = query.all()
+    results = []
+    for tx in transactions:
+        # Retrieve the user associated with the transaction
+        user = User.query.get(tx.user_id)
+        # Prepare detailed user info if available
+        user_details = {
+            'username': user.username if user else "",
+            'email': user.email if user else "",
+            'membership_status': "Active" if user and user.is_active else "Cancelled" if user else ""
+        }
+        
+        results.append({
+            'transaction_id': tx.id,
+            'book_title': tx.book_copy.book.title,
+            'user_id': tx.user_id,
+            **user_details,  # Unpack user details here
+            'date_issued': tx.date_issued.strftime('%Y-%m-%d %H:%M:%S'),
+            'due_date': tx.due_date.strftime('%Y-%m-%d %H:%M:%S'),
+            'date_returned': tx.date_returned.strftime('%Y-%m-%d %H:%M:%S') if tx.date_returned else None,
+            'fine_amount': tx.fine_amount,
+            'transaction_type': tx.transaction_type
+        })
+    
+    return jsonify({'transactions': results}), 200
+
+
+
+
+#Endpoint to return reservations of a certain user
+@main.route('/reservations', methods=['GET'])
+def get_reservations():
+    # Check if 'all=true' is provided; otherwise, filter by user_id
+    if request.args.get('all', 'false').lower() == 'true':
+        query = Reservation.query
+    else:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'user_id parameter is required'}), 400
+        query = Reservation.query.filter_by(user_id=user_id)
+    
+    # Optionally filter for active reservations
+    if request.args.get('active', 'false').lower() == 'true':
+        query = query.filter_by(status='active')
+    
+    reservations = query.all()
+    results = []
+    for res in reservations:
+        # Retrieve the user associated with the reservation
+        user = User.query.get(res.user_id)
+        user_details = {
+            'username': user.username if user else "",
+            'email': user.email if user else "",
+            'membership_status': "Active" if user and user.is_active else "Cancelled" if user else ""
+        }
+        
+        results.append({
+            'reservation_id': res.id,
+            'book_title': res.book.title,
+            'user_id': res.user_id,
+            **user_details,  # Include detailed user info
+            'reservation_date': res.reservation_date.strftime('%Y-%m-%d %H:%M:%S'),
+            'status': res.status
+        })
+    
+    return jsonify({'reservations': results}), 200
+
+
+#endpoint Providing summary statistics for the library inventory
+@main.route('/inventory', methods=['GET'])
+def get_inventory():
+    total_books = Book.query.count()
+    available_books = BookCopy.query.filter_by(status='available').count()
+    checked_out_books = BookCopy.query.filter_by(status='checked-out').count()
+    return jsonify({
+        'inventory': {
+            'total_books': total_books,
+            'available_books': available_books,
+            'checked_out_books': checked_out_books
+        }
+    }), 200
+
+#returns all users with the role "member"
+@main.route('/members', methods=['GET'])
+def get_members():
+    members = User.query.filter_by(role='member').all()
+    results = []
+    for member in members:
+        results.append({
+            'id': member.id,
+            'username': member.username,
+            'email': member.email,
+            'is_active': member.is_active
+        })
+    return jsonify({'members': results}), 200
+
+#Update Member Details
+@main.route('/members/<int:member_id>', methods=['PUT'])
+def update_member(member_id):
+    member = User.query.get(member_id)
+    if not member or member.role != 'member':
+        return jsonify({'error': 'Member not found'}), 404
+
+    data = request.get_json()
+    if data.get('username'):
+        member.username = data.get('username')
+    if data.get('email'):
+        member.email = data.get('email')
+    # Optionally update membership status if provided
+    if 'is_active' in data:
+        member.is_active = data.get('is_active')
+    
+    db.session.commit()
+    return jsonify({'message': 'Member updated successfully'}), 200
+
+
+#Cancel (Soft Delete) Membership
+@main.route('/members/<int:member_id>', methods=['DELETE'])
+def cancel_member(member_id):
+    member = User.query.get(member_id)
+    if not member or member.role != 'member':
+        return jsonify({'error': 'Member not found'}), 404
+
+    member.is_active = False
+    db.session.commit()
+    return jsonify({'message': 'Membership cancelled successfully'}), 200
+
+#Detailed Book Info View
+@main.route('/books/<int:book_id>', methods=['GET'])
+def get_book_details(book_id):
+    book = Book.query.get(book_id)
+    if not book:
+        return jsonify({'error': 'Book not found'}), 404
+    book_details = {
+        'id': book.id,
+        'title': book.title,
+        'author': book.author,
+        'subject': book.subject,
+        'publication_date': book.publication_date.strftime('%Y-%m-%d'),
+        'rack_location': book.rack_location,
+        # Add more details if needed
+    }
+    return jsonify({'book': book_details}), 200
+
+#Member cancelling their membership
+@main.route('/cancel_membership', methods=['POST'])
+def cancel_membership():
+    # Assume the user is logged in and we get the user_id from the session
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User not logged in'}), 403
+
+    user = User.query.get(user_id)
+    if not user or user.role != 'member':
+        return jsonify({'error': 'Member not found'}), 404
+
+    user.is_active = False
+    db.session.commit()
+    # Optionally, clear session to log out the user
+    session.clear()
+    return jsonify({'message': 'Your membership has been canceled.'}), 200
+
+
