@@ -1,9 +1,8 @@
 import json
 import pytest
-from datetime import datetime
-from app import create_app, db
-from app.models import Book
 from datetime import datetime, timedelta
+from app import create_app, db
+from app.models import User, Book, BookCopy, Transaction
 
 @pytest.fixture
 def client():
@@ -438,4 +437,170 @@ def test_reserve_book_with_available_copies(client):
     assert reserve_response.status_code == 400
     resp_data = json.loads(reserve_response.data)
     assert "available" in resp_data.get("error", "").lower()
+    
+    
+def create_transaction_for_user(user, book_title, days_offset):
+    """
+    Helper to create a transaction for a user.
+    days_offset: positive for future due_date, negative for past due_date.
+    """
+    book = Book(
+        title=book_title,
+        author="Test Author",
+        subject="Test Subject",
+        publication_date=datetime(2020, 1, 1).date(),
+        rack_location="B1"
+    )
+    db.session.add(book)
+    db.session.commit()
+    
+    copy = BookCopy(
+        book_id=book.id,
+        unique_barcode=f"{book.id}-1",
+        status="available"
+    )
+    db.session.add(copy)
+    db.session.commit()
+    
+    transaction = Transaction(
+        user_id=user.id,
+        book_copy_id=copy.id,
+        transaction_type="checkout",
+        date_issued=datetime.utcnow() - timedelta(days=15),
+        due_date=datetime.utcnow() + timedelta(days=days_offset),
+        fine_amount=0.0
+    )
+    db.session.add(transaction)
+    db.session.commit()
+    return transaction
+
+def test_borrowing_history_endpoint(client):
+    # Create a member user
+    user = User(
+        username="history_member",
+        email="history_member@example.com",
+        password="dummy",
+        role="member",
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    # Create two transactions for the user: one active and one returned.
+    # Active transaction: due date in the future.
+    active_tx = create_transaction_for_user(user, "Active Book", 10)
+    
+    # Returned transaction: simulate return
+    returned_tx = create_transaction_for_user(user, "Returned Book", -5)
+    returned_tx.date_returned = datetime.utcnow() - timedelta(days=2)
+    db.session.commit()
+
+    # Call the borrowing history endpoint
+    response = client.get("/borrowing_history?user_id=" + str(user.id))
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    history = data.get("borrowing_history", [])
+    # Expect 2 transactions returned, sorted in descending order of date_issued.
+    assert len(history) == 2
+    # The first record should be the more recent one (active_tx) if its date_issued is later.
+    # We'll check that both books are present in the history.
+    titles = [tx["book_title"] for tx in history]
+    assert "Active Book" in titles
+    assert "Returned Book" in titles
+    
+def create_overdue_transaction_for_test(user_email, book_title, days_overdue):
+    """
+    Creates a user, book, copy and transaction that is overdue by a given number of days.
+    """
+    user = User(
+        username=user_email.split('@')[0],
+        email=user_email,
+        password="dummy",
+        role="member",
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+    
+    book = Book(
+        title=book_title,
+        author="Test Author",
+        subject="Test Subject",
+        publication_date=datetime(2020, 1, 1).date(),
+        rack_location="TestRack"
+    )
+    db.session.add(book)
+    db.session.commit()
+    
+    copy = BookCopy(
+        book_id=book.id,
+        unique_barcode=f"{book.id}-1",
+        status="checked-out"
+    )
+    db.session.add(copy)
+    db.session.commit()
+    
+    transaction = Transaction(
+        user_id=user.id,
+        book_copy_id=copy.id,
+        transaction_type="checkout",
+        date_issued=datetime.utcnow() - timedelta(days=20),
+        due_date=datetime.utcnow() - timedelta(days=days_overdue),
+        fine_amount=0.0
+    )
+    db.session.add(transaction)
+    db.session.commit()
+    return transaction
+
+def test_overdue_transactions_endpoint(client):
+    """
+    Test that the /overdue_transactions endpoint returns the correct overdue transactions.
+    """
+    # Create two overdue transactions with different overdue days
+    create_overdue_transaction_for_test("user1@example.com", "Overdue Book 1", 5)
+    create_overdue_transaction_for_test("user2@example.com", "Overdue Book 2", 3)
+    
+    # Create one transaction that is not overdue (due date in the future)
+    user = User(username="user3", email="user3@example.com", password="dummy", role="member", is_active=True)
+    db.session.add(user)
+    db.session.commit()
+    book = Book(
+        title="Not Overdue Book",
+        author="Test Author",
+        subject="Test Subject",
+        publication_date=datetime(2021, 1, 1).date(),
+        rack_location="TestRack"
+    )
+    db.session.add(book)
+    db.session.commit()
+    copy = BookCopy(
+        book_id=book.id,
+        unique_barcode=f"{book.id}-1",
+        status="checked-out"
+    )
+    db.session.add(copy)
+    db.session.commit()
+    transaction = Transaction(
+        user_id=user.id,
+        book_copy_id=copy.id,
+        transaction_type="checkout",
+        date_issued=datetime.utcnow() - timedelta(days=5),
+        due_date=datetime.utcnow() + timedelta(days=5),
+        fine_amount=0.0
+    )
+    db.session.add(transaction)
+    db.session.commit()
+    
+    # Call the overdue_transactions endpoint
+    response = client.get("/overdue_transactions")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    overdue_list = data.get("overdue_transactions", [])
+    
+    # We expect only the two overdue transactions to be returned
+    assert len(overdue_list) == 2
+    titles = [tx["book_title"] for tx in overdue_list]
+    assert "Overdue Book 1" in titles
+    assert "Overdue Book 2" in titles
+    assert "Not Overdue Book" not in titles
 

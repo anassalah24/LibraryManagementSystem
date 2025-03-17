@@ -85,3 +85,52 @@ def test_cancel_member(client):
     # Verify that the member's is_active flag is now False
     cancelled_member = db.session.get(User, member.id)
     assert cancelled_member.is_active == False
+    
+    
+def register_member_directly(username, email, password="password"):
+    """Helper to create a member directly using the model."""
+    member = User(
+        username=username,
+        email=email,
+        password=generate_password_hash(password),
+        role="member",
+        is_active=False  # Start as cancelled/inactive for testing reactivation.
+    )
+    db.session.add(member)
+    db.session.commit()
+    return member
+
+def test_reactivate_member(client):
+    """Test that a librarian can reactivate a member's membership."""
+    # Create an inactive member.
+    member = register_member_directly("inactive_member", "inactive@example.com")
+    member_id = member.id
+
+    # Send a PUT request to reactivate the member.
+    response = client.put(f"/members/reactivate/{member_id}", content_type="application/json")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert "Membership reactivated successfully" in data.get("message", "")
+
+    # Verify that the member is now active.
+    updated_member = db.session.get(User, member_id)
+    assert updated_member.is_active == True
+
+def test_reactivate_already_active_member(client):
+    """Test that reactivating an already active member returns an appropriate message."""
+    # Create an active member.
+    member = User(
+        username="active_member",
+        email="active@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    db.session.add(member)
+    db.session.commit()
+    member_id = member.id
+
+    response = client.put(f"/members/reactivate/{member_id}", content_type="application/json")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert "Membership is already active" in data.get("message", "")

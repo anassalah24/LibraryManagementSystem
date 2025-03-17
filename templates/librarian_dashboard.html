@@ -72,6 +72,15 @@
         <p>Loading inventory overview...</p>
       </div>
     </div>
+    <!-- Overdue Transactions Section -->
+    <div class="card">
+      <div class="card-header">
+        Overdue Transactions
+      </div>
+      <div class="card-body" id="overdueTransactionsSection">
+        <p>Loading overdue transactions...</p>
+      </div>
+    </div>
   </div>
 
   <!-- jQuery and Bootstrap JS -->
@@ -193,10 +202,48 @@
         });
       }
 
+      function loadOverdueTransactions() {
+        $.ajax({
+            url: '/overdue_transactions',
+            type: 'GET',
+            success: function(response) {
+                let output = '';
+                if(response.overdue_transactions && response.overdue_transactions.length > 0) {
+                    output += '<table class="table table-striped"><thead><tr>';
+                    output += '<th>Transaction ID</th>';
+                    output += '<th>Book Title</th>';
+                    output += '<th>User ID</th>';
+                    output += '<th>Date Issued</th>';
+                    output += '<th>Due Date</th>';
+                    output += '<th>Fine</th>';
+                    output += '</tr></thead><tbody>';
+                    response.overdue_transactions.forEach(function(tx) {
+                        output += `<tr>
+                            <td>${tx.transaction_id}</td>
+                            <td>${tx.book_title}</td>
+                            <td>${tx.user_id}</td>
+                            <td>${tx.date_issued}</td>
+                            <td>${tx.due_date}</td>
+                            <td>$${tx.fine_amount}</td>
+                        </tr>`;
+                    });
+                    output += '</tbody></table>';
+                } else {
+                    output = '<p>No overdue transactions found.</p>';
+                }
+                $('#overdueTransactionsSection').html(output);
+            },
+            error: function() {
+                $('#overdueTransactionsSection').html('<div class="alert alert-danger">Error loading overdue transactions.</div>');
+            }
+        });
+      }
+
       // Initial load of all sections
       loadTransactions();
       loadReservations();
       loadInventory();
+      loadOverdueTransactions();
     });
   </script>
 </body>

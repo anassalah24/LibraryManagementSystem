@@ -72,7 +72,13 @@
               <label for="editEmail">Email</label>
               <input type="email" class="form-control" id="editEmail" required>
             </div>
-            <!-- Optionally, a field for membership status can be added, but usually it's managed via cancellation -->
+            <!-- Member Barcode Display -->
+            <div class="form-group">
+              <label>Member Barcode:</label>
+              <div id="memberBarcodeContainer">
+                <!-- Barcode image will be loaded here -->
+              </div>
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
@@ -82,17 +88,17 @@
       </div>
     </div>
   </div>
-
+  
   <!-- jQuery and Bootstrap JS -->
   <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  
   <!-- Custom JS for Member Management -->
   <script>
     // Helper function to display messages
     function displayMessage(type, message) {
       const html = `<div class="alert alert-${type}" role="alert">${message}</div>`;
       $('#messageContainer').html(html);
-        // Scroll to top of page or to the message container
       $('html, body').animate({ scrollTop: $('#messageContainer').offset().top }, 500);
       setTimeout(function(){ $('#messageContainer').html(''); }, 10000);
     }
@@ -115,10 +121,13 @@
                   <button class="btn btn-sm btn-warning editMember" 
                     data-id="${member.id}" 
                     data-username="${member.username}" 
-                    data-email="${member.email}">
+                    data-email="${member.email}" 
+                    data-barcode="${member.barcode_image}">
                     Edit
                   </button>
-                  <button class="btn btn-sm btn-danger cancelMember" data-id="${member.id}">Cancel Membership</button>
+                  ${member.is_active 
+                    ? `<button class="btn btn-sm btn-danger cancelMember" data-id="${member.id}">Cancel Membership</button>`
+                    : `<button class="btn btn-sm btn-success reactivateMember" data-id="${member.id}">Reactivate</button>`}
                 </td>
               </tr>`;
             });
@@ -142,11 +151,20 @@
         const memberId = $(this).data('id');
         const username = $(this).data('username');
         const email = $(this).data('email');
+        const barcodeImage = $(this).data('barcode');
 
         $('#editMemberId').val(memberId);
         $('#editUsername').val(username);
         $('#editEmail').val(email);
-
+        
+        if (barcodeImage) {
+          $('#memberBarcodeContainer').html(
+            `<img src="data:image/png;base64,${barcodeImage}" alt="Member Barcode" class="img-fluid" style="max-width:200px;">`
+          );
+        } else {
+          $('#memberBarcodeContainer').html('<p>No barcode available.</p>');
+        }
+        
         $('#editMemberModal').modal('show');
       });
 
@@ -192,7 +210,33 @@
           });
         }
       });
+
+      // Handle Reactivate Membership button click
+      $(document).on('click', '.reactivateMember', function(){
+        const memberId = $(this).data('id');
+        if(confirm('Are you sure you want to reactivate this membership?')) {
+          $.ajax({
+            url: '/members/reactivate/' + memberId,
+            type: 'PUT',
+            contentType: 'application/json',
+            success: function(response) {
+              displayMessage('success', response.message);
+              loadMembers();
+            },
+            error: function(xhr) {
+              displayMessage('danger', xhr.responseJSON.error || 'Failed to reactivate membership.');
+            }
+          });
+        }
+      });
     });
+    
+    function displayMessage(type, message) {
+      const html = `<div class="alert alert-${type}" role="alert">${message}</div>`;
+      $('#messageContainer').html(html);
+      $('html, body').animate({ scrollTop: $('#messageContainer').offset().top }, 500);
+      setTimeout(function(){ $('#messageContainer').html(''); }, 10000);
+    }
   </script>
 </body>
 </html>

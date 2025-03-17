@@ -34,6 +34,6 @@ def create_app():
     app.register_blueprint(main)
     
     # Start the scheduler for background tasks
-    start_scheduler(app)
+    #start_scheduler(app)
     
     return app

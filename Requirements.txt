@@ -5,3 +5,5 @@ Flask-Mail
 Flask-SQLAlchemy
 APScheduler
 pytest
+python-barcode
+Pillow

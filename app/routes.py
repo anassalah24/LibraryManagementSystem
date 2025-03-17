@@ -6,6 +6,7 @@ from app.models import User , Book , BookCopy , Transaction , BookCopy , Reserva
 from app.notifications import send_email_notification
 from flask import session
 from flask import redirect, url_for
+from app.utils.barcode_utils import generate_barcode_base64
 
 
 main = Blueprint('main', __name__, template_folder='../templates')
@@ -24,9 +25,14 @@ def logout():
 def member_dashboard():
     if 'user_id' not in session or session.get('role') != 'member':
         return redirect(url_for('main.login_page'))
+    user_id = session.get('user_id')
     username = session.get('username', 'MemberUser')
-    # Pass the logged-in user's id to the template for AJAX calls
-    return render_template('member_dashboard.html', username=username, user_id=session.get('user_id'))
+    # Retrieve user from database to get the email
+    user = db.session.get(User, user_id)
+    email = user.email if user else ""
+    # Generate barcode for the member using a unique code (e.g., "MEMBER-<user_id>")
+    barcode_img = generate_barcode_base64("MEMBER-" + str(user_id)) if user else ""
+    return render_template('member_dashboard.html', username=username, user_id=user_id, email=email, barcode=barcode_img)
 
 
 #Loads the Librarian Dashboard page
@@ -512,7 +518,9 @@ def get_members():
             'id': member.id,
             'username': member.username,
             'email': member.email,
-            'is_active': member.is_active
+            'is_active': member.is_active,
+            # Generate a barcode image using a unique code (for example, "MEMBER-<id>")
+            'barcode_image': generate_barcode_base64("MEMBER-" + str(member.id))
         })
     return jsonify({'members': results}), 200
 
@@ -553,6 +561,18 @@ def get_book_details(book_id):
     book = Book.query.get(book_id)
     if not book:
         return jsonify({'error': 'Book not found'}), 404
+    
+    # Build a list of copies for this book with barcode images.
+    copies_list = []
+    if book.copies:
+        for copy in book.copies:
+            copies_list.append({
+                'id': copy.id,
+                'unique_barcode': copy.unique_barcode,
+                'status': copy.status,
+                'barcode_image': generate_barcode_base64(copy.unique_barcode)
+            })
+    
     book_details = {
         'id': book.id,
         'title': book.title,
@@ -560,7 +580,7 @@ def get_book_details(book_id):
         'subject': book.subject,
         'publication_date': book.publication_date.strftime('%Y-%m-%d'),
         'rack_location': book.rack_location,
-        # Add more details if needed
+        'copies': copies_list
     }
     return jsonify({'book': book_details}), 200
 
@@ -582,4 +602,88 @@ def cancel_membership():
     session.clear()
     return jsonify({'message': 'Your membership has been canceled.'}), 200
 
+#returns complete user borrowing history
+@main.route('/borrowing_history', methods=['GET'])
+def borrowing_history():
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id parameter is required'}), 400
+
+    # Get all transactions for the user, ordered by date_issued descending (latest first)
+    transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date_issued.desc()).all()
+    history = []
+    for tx in transactions:
+        history.append({
+            'transaction_id': tx.id,
+            'book_title': tx.book_copy.book.title,
+            'transaction_type': tx.transaction_type,
+            'date_issued': tx.date_issued.strftime('%Y-%m-%d %H:%M:%S'),
+            'due_date': tx.due_date.strftime('%Y-%m-%d %H:%M:%S'),
+            'date_returned': tx.date_returned.strftime('%Y-%m-%d %H:%M:%S') if tx.date_returned else None,
+            'fine_amount': tx.fine_amount
+        })
+    return jsonify({'borrowing_history': history}), 200
+
+
+#returns all overdue transactions
+@main.route('/overdue_transactions', methods=['GET'])
+def overdue_transactions():
+    # Query all transactions where the book has not been returned and due_date is in the past
+    transactions = Transaction.query.filter(
+        Transaction.date_returned == None,
+        Transaction.due_date < datetime.utcnow()
+    ).all()
+    
+    results = []
+    for tx in transactions:
+        results.append({
+            'transaction_id': tx.id,
+            'book_title': tx.book_copy.book.title,
+            'user_id': tx.user_id,
+            'date_issued': tx.date_issued.strftime('%Y-%m-%d %H:%M:%S'),
+            'due_date': tx.due_date.strftime('%Y-%m-%d %H:%M:%S'),
+            'fine_amount': tx.fine_amount
+        })
+    return jsonify({'overdue_transactions': results}), 200
+
+#To enable profile edits for members
+@main.route('/profile', methods=['PUT'])
+def edit_profile():
+    # Retrieve the logged-in user from session
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User not logged in'}), 403
+    
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json()
+    if 'username' in data:
+        user.username = data['username']
+    if 'email' in data:
+        user.email = data['email']
+
+    db.session.commit()
+    return jsonify({
+        'message': 'Profile updated successfully',
+        'user': {
+            'username': user.username,
+            'email': user.email
+        }
+    }), 200
+    
+#enables reactivating previously deactivated members   
+@main.route('/members/reactivate/<int:member_id>', methods=['PUT'])
+def reactivate_member(member_id):
+    member = db.session.get(User, member_id)
+    if not member or member.role != 'member':
+        return jsonify({'error': 'Member not found'}), 404
+
+    if member.is_active:
+        return jsonify({'message': 'Membership is already active'}), 200
+
+    member.is_active = True
+    db.session.commit()
+    return jsonify({'message': 'Membership reactivated successfully'}), 200
 
