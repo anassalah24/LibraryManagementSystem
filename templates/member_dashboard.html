@@ -7,7 +7,6 @@
   <!-- Bootstrap CSS -->
   <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    /* Siemens color palette adjustments */
     .navbar {
       background-color: #0072C6;
     }
@@ -174,7 +173,6 @@
   <!-- Custom JS for dynamic data integration -->
   <script>
     $(document).ready(function(){
-      // Placeholder: Replace with dynamic user id from session
       const userId = "{{ user_id|tojson }}";
 
       // Function to load active loans
@@ -368,7 +366,7 @@
     });
 
       $(document).on('click', '.viewBookDetails', function(e){
-        e.preventDefault();  // Prevent the default anchor behavior
+        e.preventDefault();
         const bookId = $(this).data('id');
         
         $.ajax({
@@ -406,18 +404,16 @@
           username: $('#profileUsername').val(),
           email: $('#profileEmail').val()
         };
-        // Send an AJAX request to the profile endpoint (assumes PUT /profile exists)
+        // Send an AJAX request to the profile endpoint
         $.ajax({
           url: '/profile',
           type: 'PUT',
           contentType: 'application/json',
           data: JSON.stringify(updatedData),
           success: function(response) {
-            // Display a success message (could be a toast or inline alert)
-            // For simplicity, we'll use an alert and then hide the modal.
+            // Display a success message
             alert(response.message);
             $('#editProfileModal').modal('hide');
-            // Optionally, update the UI (like the navbar username) if needed.
           },
           error: function(xhr) {
             // Display error message at the top of the modal
@@ -425,7 +421,7 @@
             $('#editProfileModal .modal-body').prepend(
               `<div class="alert alert-danger">${errorMsg}</div>`
             );
-            // Optionally scroll to the top of the modal content:
+            //scroll to the top of the modal content:
             $('#editProfileModal .modal-body').animate({ scrollTop: 0 }, 500);
           }
         });

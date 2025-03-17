@@ -13,7 +13,7 @@ main = Blueprint('main', __name__, template_folder='../templates')
 
 @main.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('login.html')
 
 @main.route('/logout')
 def logout():
@@ -30,7 +30,7 @@ def member_dashboard():
     # Retrieve user from database to get the email
     user = db.session.get(User, user_id)
     email = user.email if user else ""
-    # Generate barcode for the member using a unique code (e.g., "MEMBER-<user_id>")
+    # Generate barcode for the member using a unique code
     barcode_img = generate_barcode_base64("MEMBER-" + str(user_id)) if user else ""
     return render_template('member_dashboard.html', username=username, user_id=user_id, email=email, barcode=barcode_img)
 
@@ -43,16 +43,15 @@ def librarian_dashboard():
     username = session.get('username', 'LibrarianUser')
     return render_template('librarian_dashboard.html', username=username, user_id=session.get('user_id'))
 
+#Loads the Librarian manage books page
 @main.route('/books/manage')
 def manage_books():
-    # For simplicity, we pass a placeholder librarian username.
-    username = "LibrarianUser"
+    username = session.get('username', 'LibrarianUser')
     return render_template('manage_books.html', username=username)
 
-#manage members
+#Loads the Librarian mamange members page
 @main.route('/member_management')
 def member_management():
-    # Here you could add any authentication checks if necessary
     return render_template('member_management.html')
 
 
@@ -70,7 +69,7 @@ def register():
     username = data.get('username')
     email = data.get('email')
     password = data.get('password')
-    role = data.get('role', 'member')  # Default role is 'member'
+    role = data.get('role', 'member')
     
     # Basic validation
     if not username or not email or not password:
@@ -124,7 +123,7 @@ def login():
     return jsonify({'message': 'Login successful', 'user': {'username': user.username, 'role': user.role}}), 200
 
 
-# Endpoint for adding a new book (Librarian only, but for now we won't enforce role-checks)
+# Endpoint for adding a new book
 @main.route('/books', methods=['POST'])
 def add_book():
     data = request.get_json()
@@ -133,9 +132,9 @@ def add_book():
     title = data.get('title')
     author = data.get('author')
     subject = data.get('subject')
-    publication_date_str = data.get('publication_date')  # Expecting a string in 'YYYY-MM-DD' format
+    publication_date_str = data.get('publication_date')
     rack_location = data.get('rack_location')
-    num_copies = data.get('num_copies', 1)  # Default to one copy if not specified
+    num_copies = data.get('num_copies', 1)
 
     # Basic validation
     if not all([title, author, subject, publication_date_str, rack_location]):
@@ -159,7 +158,7 @@ def add_book():
 
     # Create the specified number of book copies with simulated unique barcodes
     for i in range(num_copies):
-        # Generate a simple barcode using book id and index (for simulation)
+        # Generate a simple barcode using book id and index (for simulation purposes only)
         barcode = f"{book.id}-{i+1}"
         copy = BookCopy(book_id=book.id, unique_barcode=barcode)
         db.session.add(copy)
@@ -168,7 +167,7 @@ def add_book():
     return jsonify({'message': 'Book added successfully', 'book_id': book.id}), 201
 
 
-# Endpoint for updating an existing book (Librarian only)
+# Endpoint for updating an existing book
 @main.route('/books/<int:book_id>', methods=['PUT'])
 def update_book(book_id):
     book = Book.query.get(book_id)
@@ -192,7 +191,7 @@ def update_book(book_id):
 
 
 
-# Endpoint for deleting a book (Librarian only)
+# Endpoint for deleting a book
 @main.route('/books/<int:book_id>', methods=['DELETE'])
 def delete_book(book_id):
     book = Book.query.get(book_id)
@@ -298,8 +297,6 @@ def checkout_book():
     }), 201
 
 # Endpoint for renewing a checked-out book
-from datetime import datetime, timedelta
-
 @main.route('/renew', methods=['POST'])
 def renew_book():
     data = request.get_json()
@@ -314,7 +311,7 @@ def renew_book():
     if not transaction:
         return jsonify({'error': 'Active transaction not found for this user and transaction ID'}), 404
 
-    # Add 10 days to the **current due date**
+    # Add 10 days to the current due date
     transaction.due_date = transaction.due_date + timedelta(days=10)
     transaction.transaction_type = 'renew'
     db.session.commit()
@@ -345,12 +342,12 @@ def return_book():
     # Mark the transaction as returned
     transaction.date_returned = datetime.utcnow()
 
-    # Calculate fine if returned after due date (e.g., $1 per day overdue)
+    # Calculate fine if returned after due date (Here i use the logic of adding $1 per day overdue)
     fine = 0.0
     now = datetime.utcnow()
     if now > transaction.due_date:
         overdue_days = (now - transaction.due_date).days
-        fine = overdue_days * 1.0  # $1 per day fine
+        fine = overdue_days * 1.0
         transaction.fine_amount = fine
 
     # Update the book copy's status to available
@@ -360,12 +357,10 @@ def return_book():
     db.session.commit()
 
     # Check if there is an active reservation for this book
-    # First, find the book_id for the returned copy
     book_id = book_copy.book_id
     reservation = Reservation.query.filter_by(book_id=book_id, status='active').first()
     if reservation:
         # Send email notification
-        # Here, we assume that the User model has an 'email' field and the reservation relationship is set up
         recipient_email = reservation.user.email
         subject = "Book Available Notification"
         body = f"Hello {reservation.user.username},\n\nThe book you reserved is now available for checkout."
@@ -422,7 +417,7 @@ def get_transactions():
             return jsonify({'error': 'user_id parameter is required'}), 400
         query = Transaction.query.filter_by(user_id=user_id)
     
-    # Optionally, filter for active transactions only
+    # filter for active transactions only
     if request.args.get('active', 'false').lower() == 'true':
         query = query.filter(Transaction.date_returned == None)
     
@@ -442,7 +437,7 @@ def get_transactions():
             'transaction_id': tx.id,
             'book_title': tx.book_copy.book.title,
             'user_id': tx.user_id,
-            **user_details,  # Unpack user details here
+            **user_details,
             'date_issued': tx.date_issued.strftime('%Y-%m-%d %H:%M:%S'),
             'due_date': tx.due_date.strftime('%Y-%m-%d %H:%M:%S'),
             'date_returned': tx.date_returned.strftime('%Y-%m-%d %H:%M:%S') if tx.date_returned else None,
@@ -458,7 +453,7 @@ def get_transactions():
 #Endpoint to return reservations of a certain user
 @main.route('/reservations', methods=['GET'])
 def get_reservations():
-    # Check if 'all=true' is provided; otherwise, filter by user_id
+    # Check if 'all=true' is provided (librarian usage); otherwise, filter by user_id (member usage)
     if request.args.get('all', 'false').lower() == 'true':
         query = Reservation.query
     else:
@@ -467,7 +462,7 @@ def get_reservations():
             return jsonify({'error': 'user_id parameter is required'}), 400
         query = Reservation.query.filter_by(user_id=user_id)
     
-    # Optionally filter for active reservations
+    # filter for active reservations
     if request.args.get('active', 'false').lower() == 'true':
         query = query.filter_by(status='active')
     
@@ -486,7 +481,7 @@ def get_reservations():
             'reservation_id': res.id,
             'book_title': res.book.title,
             'user_id': res.user_id,
-            **user_details,  # Include detailed user info
+            **user_details,
             'reservation_date': res.reservation_date.strftime('%Y-%m-%d %H:%M:%S'),
             'status': res.status
         })
@@ -494,7 +489,7 @@ def get_reservations():
     return jsonify({'reservations': results}), 200
 
 
-#endpoint Providing summary statistics for the library inventory
+#endpoint Providing brief summary statistics for the library inventory
 @main.route('/inventory', methods=['GET'])
 def get_inventory():
     total_books = Book.query.count()
@@ -519,7 +514,7 @@ def get_members():
             'username': member.username,
             'email': member.email,
             'is_active': member.is_active,
-            # Generate a barcode image using a unique code (for example, "MEMBER-<id>")
+            # Generate a barcode image using a unique code
             'barcode_image': generate_barcode_base64("MEMBER-" + str(member.id))
         })
     return jsonify({'members': results}), 200
@@ -536,7 +531,7 @@ def update_member(member_id):
         member.username = data.get('username')
     if data.get('email'):
         member.email = data.get('email')
-    # Optionally update membership status if provided
+    # update membership status if provided
     if 'is_active' in data:
         member.is_active = data.get('is_active')
     
@@ -587,7 +582,6 @@ def get_book_details(book_id):
 #Member cancelling their membership
 @main.route('/cancel_membership', methods=['POST'])
 def cancel_membership():
-    # Assume the user is logged in and we get the user_id from the session
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'error': 'User not logged in'}), 403
@@ -598,7 +592,7 @@ def cancel_membership():
 
     user.is_active = False
     db.session.commit()
-    # Optionally, clear session to log out the user
+    # clear session to log out the user
     session.clear()
     return jsonify({'message': 'Your membership has been canceled.'}), 200
 
@@ -649,7 +643,6 @@ def overdue_transactions():
 #To enable profile edits for members
 @main.route('/profile', methods=['PUT'])
 def edit_profile():
-    # Retrieve the logged-in user from session
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'error': 'User not logged in'}), 403

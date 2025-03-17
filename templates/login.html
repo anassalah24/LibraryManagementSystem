@@ -7,9 +7,8 @@
   <!-- Bootstrap CSS -->
   <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    /* Siemens color palette adjustments */
     .navbar {
-      background-color: #0072C6; /* Siemens Blue */
+      background-color: #0072C6;
     }
     .navbar-brand, .navbar-nav .nav-link {
       color: #ffffff !important;
@@ -110,10 +109,10 @@
         });
       });
 
-      // Optionally, handle click to show registration page (to be built later)
+      // handle click to show registration page
       $('#showRegister').on('click', function(e){
         e.preventDefault();
-        window.location.href = '/register';  // We'll create the registration UI later
+        window.location.href = '/register';
       });
     });
   </script>

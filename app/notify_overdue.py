@@ -11,14 +11,12 @@ def notify_overdue_function():
     ).all()
 
     if not overdue_transactions:
-        # Optionally, you could log that no overdue transactions were found.
         return
 
     for tx in overdue_transactions:
         # Get member details
         member = User.query.get(tx.user_id)
         if not member:
-            # If member not found, skip this transaction
             continue
 
         subject = "Overdue Book Notification"
@@ -32,5 +30,4 @@ def notify_overdue_function():
         try:
             send_email_notification(subject, member.email, body)
         except Exception as e:
-            # Optionally, log the exception or take other actions
             print(f"Failed to send notification for transaction {tx.id}: {e}")

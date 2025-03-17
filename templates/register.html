@@ -7,7 +7,6 @@
   <!-- Bootstrap CSS -->
   <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    /* Siemens color palette adjustments */
     .navbar {
       background-color: #0072C6;
     }
@@ -91,12 +90,12 @@
             username: username,
             email: email,
             password: password,
-            role: 'member'  // Default role for registration
+            role: 'member'
           }),
           success: function(response){
             $('#registerAlert').removeClass('d-none alert-danger').addClass('alert-success')
               .text(response.message);
-            // Optionally, redirect to login page after registration
+            //redirect to dashboard after registration
             setTimeout(function(){
               window.location.href = '/dashboard';
             }, 1000);

@@ -3,13 +3,12 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail
 from apscheduler.schedulers.background import BackgroundScheduler
+from app.notify_overdue import notify_overdue_function
 
 # Initialize extensions
 db = SQLAlchemy()
 mail = Mail()
 
-# Import your overdue notification function
-from app.notify_overdue import notify_overdue_function  # Adjust path if necessary
 
 def start_scheduler(app):
     scheduler = BackgroundScheduler()
