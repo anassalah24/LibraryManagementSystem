@@ -165,6 +165,29 @@
       </div>
     </div>
   </div>
+    <!-- Floating Chatbot Button -->
+    <div id="chatbotButton" style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+      <button class="btn btn-primary">Chat with BookBot</button>
+    </div>
+
+  <!-- Chatbot Window (initially hidden) -->
+  <div id="chatbotWindow" style="position: fixed; bottom: 70px; right: 20px; width: 300px; height: 400px; background: white; border: 1px solid #ccc; display: none; z-index: 1000;">
+    <div style="padding: 10px; border-bottom: 1px solid #ccc; background: #0072C6; color: white;">
+      BookBot Recommender
+      <button id="closeChatbot" style="float: right; background: transparent; border: none; color: white;">&times;</button>
+    </div>
+    <div id="chatbotMessages" style="padding: 10px; height: 300px; overflow-y: auto;"></div>
+    <div style="padding: 10px; border-top: 1px solid #ccc;">
+      <form id="chatbotForm">
+        <div class="input-group">
+          <input type="text" class="form-control" id="chatbotInput" placeholder="Type your message..." required>
+          <div class="input-group-append">
+            <button class="btn btn-primary" type="submit">Send</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
 
 
   <!-- jQuery and Bootstrap JS -->
@@ -461,7 +484,7 @@
     $('#messageContainer').html(html);
     // Scroll to top of page or to the message container
     $('html, body').animate({ scrollTop: $('#messageContainer').offset().top }, 500);
-    // Optionally, auto-hide after a few seconds:
+    // auto-hide after a few seconds:
     setTimeout(function(){
       $('#messageContainer').html('');
     }, 10000);
@@ -502,6 +525,60 @@
         }
     });
     }
+    
+    $(document).ready(function(){
+      // Toggle chatbot window visibility and display welcome message if empty
+      $('#chatbotButton').click(function(){
+        $('#chatbotWindow').toggle();
+        if ($('#chatbotWindow').is(':visible')) {
+          let msgContent = $.trim($('#chatbotMessages').html());
+          if (msgContent === "") {
+            $('#chatbotMessages').append(
+              `<div><strong>BookBot:</strong> Hello! I'm BookBot. How can I help you today?</div>`
+            );
+          }
+        }
+      });
+      $('#closeChatbot').click(function(){
+        $('#chatbotWindow').hide();
+      });
+
+      // Handle chatbot form submission as before...
+      $('#chatbotForm').on('submit', function(e){
+        e.preventDefault();
+        let prompt = $('#chatbotInput').val();
+        $('#chatbotMessages').append(`<div><strong>You:</strong> ${prompt}</div>`);
+        $('#chatbotInput').val('');
+        
+        $.ajax({
+          url: '/recommend',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ prompt: prompt }),
+          success: function(response) {
+            if(response.recommendations && response.recommendations.length > 0) {
+              let recs = response.recommendations;
+              let recHTML = `<div><strong>BookBot:</strong><br>Here are some recommendations:<ul>`;
+              recs.forEach(function(book) {
+                recHTML += `<li>${book.title} (${book.subject})</li>`;
+              });
+              recHTML += `</ul></div>`;
+              $('#chatbotMessages').append(recHTML);
+            } else {
+              $('#chatbotMessages').append(
+                `<div><strong>BookBot:</strong> ${response.message}</div>`
+              );
+            }
+            $('#chatbotMessages').scrollTop($('#chatbotMessages')[0].scrollHeight);
+          },
+          error: function(xhr) {
+            $('#chatbotMessages').append(
+              `<div><strong>BookBot:</strong> Error processing your request.</div>`
+            );
+          }
+        });
+      });
+    });
   </script>
 </body>
 </html>

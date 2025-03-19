@@ -8,6 +8,8 @@ from flask import session
 from flask import redirect, url_for
 from app.utils.barcode_utils import generate_barcode_base64
 from functools import wraps
+from sentence_transformers import SentenceTransformer, util
+from app.utils.spellcheck import correct_text
 
 
 main = Blueprint('main', __name__, template_folder='../templates')
@@ -216,7 +218,7 @@ def delete_book(book_id):
     if not book:
         return jsonify({'error': 'Book not found'}), 404
 
-    # Optionally, also delete associated copies
+    # also delete associated copies
     BookCopy.query.filter_by(book_id=book_id).delete()
     db.session.delete(book)
     db.session.commit()
@@ -719,3 +721,59 @@ def reactivate_member(member_id):
     db.session.commit()
     return jsonify({'message': 'Membership reactivated successfully'}), 200
 
+
+# Load a pre-trained model
+model = SentenceTransformer('all-mpnet-base-v2') # Better performance model
+# Lighter model : all-MiniLM-L6-v2
+
+@main.route('/recommend', methods=['POST'])
+def recommend_books():
+    data = request.get_json()
+    prompt = data.get('prompt', '').strip()
+    if not prompt:
+        return jsonify({'message': 'Please provide a prompt.'}), 400
+
+    # Correct spelling mistakes in the prompt
+    corrected_prompt = correct_text(prompt)
+    
+    # Retrieve all books from the database
+    books = Book.query.all()
+    if not books:
+        return jsonify({'message': 'No books available in the library.'}), 200
+
+    # Prepare documents: combine title and subject for each book
+    book_texts = [f"{book.title} {book.author} {book.subject}" for book in books]
+    book_ids = [book.id for book in books]
+
+    # Compute embeddings for the books and for the corrected prompt
+    book_embeddings = model.encode(book_texts, convert_to_tensor=True)
+    prompt_embedding = model.encode(corrected_prompt, convert_to_tensor=True)
+
+    # Compute cosine similarity between the prompt and each book
+    cosine_scores = util.cos_sim(prompt_embedding, book_embeddings)[0]
+    
+    # Set a similarity threshold and pick top 3 if above threshold
+    threshold = 0.1
+    recommendations = []
+    for idx, score in enumerate(cosine_scores):
+        if score >= threshold:
+            recommendations.append((book_ids[idx], score.item()))
+
+    if not recommendations:
+        return jsonify({'message': 'No matching books found based on your interest.'}), 200
+
+    # Sort recommendations by similarity descending and take top 3
+    recommendations = sorted(recommendations, key=lambda x: x[1], reverse=True)[:3]
+
+    # Retrieve book details for recommended books
+    rec_books = []
+    for book_id, score in recommendations:
+        book = Book.query.get(book_id)
+        rec_books.append({
+            'id': book.id,
+            'title': book.title,
+            'subject': book.subject,
+            'similarity': score
+        })
+
+    return jsonify({'recommendations': rec_books}), 200

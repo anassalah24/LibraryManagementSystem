@@ -7,4 +7,5 @@ APScheduler
 pytest
 python-barcode
 Pillow
-functools
+pyspellchecker
+sentence-transformers
