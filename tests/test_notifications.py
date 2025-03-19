@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 from app import create_app, db
 from app.models import Book, BookCopy, Transaction, User, Reservation
+from werkzeug.security import generate_password_hash
 
 @pytest.fixture
 def client():
@@ -85,26 +86,31 @@ def test_reserved_notification(client):
     Test that when a book with an active reservation becomes available upon return,
     an email notification is sent and the reservation status is updated to 'notified'.
     """
-    # Create two members: one for checkout and one for reservation.
+    # Create two active member users for testing
     member1 = User(
         username="member1", 
         email="member1@example.com", 
-        password="dummy", 
+        password=generate_password_hash("password"), 
         role="member", 
         is_active=True
     )
     member2 = User(
         username="member2", 
         email="member2@example.com", 
-        password="dummy", 
+        password=generate_password_hash("password"), 
         role="member", 
         is_active=True
     )
-    db.session.add(member1)
-    db.session.add(member2)
+    db.session.add_all([member1, member2])
     db.session.commit()
 
-    # Create a book and its copy, mark copy as checked-out.
+    # Simulate session for member1 (who will checkout and return the book)
+    with client.session_transaction() as sess:
+        sess['user_id'] = member1.id
+        sess['username'] = member1.username
+        sess['role'] = member1.role
+
+    # Create a book and its copy, mark the copy as checked-out.
     book = Book(
         title="Reserved Notification Book",
         author="Test Author",
@@ -158,7 +164,7 @@ def test_reserved_notification(client):
         assert "Book returned successfully" in resp_data.get("message", "")
         # Verify that send_email_notification was called.
         assert mock_notify.called, "Expected notification to be sent when reserved book becomes available."
-    
+
     # Verify that the reservation status is updated to 'notified'
     updated_reservation = db.session.get(Reservation, reservation.id)
     assert updated_reservation.status.lower() == "notified", "Reservation status was not updated to 'notified'."

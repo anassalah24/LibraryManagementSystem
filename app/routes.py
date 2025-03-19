@@ -7,6 +7,7 @@ from app.notifications import send_email_notification
 from flask import session
 from flask import redirect, url_for
 from app.utils.barcode_utils import generate_barcode_base64
+from functools import wraps
 
 
 main = Blueprint('main', __name__, template_folder='../templates')
@@ -14,6 +15,18 @@ main = Blueprint('main', __name__, template_folder='../templates')
 @main.route('/')
 def index():
     return render_template('login.html')
+
+def require_active_membership(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'User not logged in'}), 403
+        user = db.session.get(User, user_id)
+        if not user or not user.is_active:
+            return jsonify({'error': 'Membership is cancelled. Please contact the library.'}), 403
+        return func(*args, **kwargs)
+    return wrapper
 
 @main.route('/logout')
 def logout():
@@ -259,6 +272,7 @@ def search_books():
 
 # Endpoint for checking out a book
 @main.route('/checkout', methods=['POST'])
+@require_active_membership
 def checkout_book():
     data = request.get_json()
     user_id = data.get('user_id')
@@ -312,6 +326,7 @@ def checkout_book():
 
 # Endpoint for renewing a checked-out book
 @main.route('/renew', methods=['POST'])
+@require_active_membership
 def renew_book():
     data = request.get_json()
     transaction_id = data.get('transaction_id')
@@ -324,6 +339,10 @@ def renew_book():
     transaction = Transaction.query.filter_by(id=transaction_id, user_id=user_id, date_returned=None).first()
     if not transaction:
         return jsonify({'error': 'Active transaction not found for this user and transaction ID'}), 404
+
+    # Check if the transaction is overdue
+    if datetime.utcnow() > transaction.due_date:
+        return jsonify({'error': 'Cannot renew an overdue transaction. Please return the book instead.'}), 400
 
     # Add 10 days to the current due date
     transaction.due_date = transaction.due_date + timedelta(days=10)
@@ -338,6 +357,7 @@ def renew_book():
 
 # Endpoint for returning a book
 @main.route('/return', methods=['POST'])
+@require_active_membership
 def return_book():
     data = request.get_json()
     user_id = data.get('user_id')
@@ -394,6 +414,7 @@ def return_book():
 
 # Endpoint for reserving a book
 @main.route('/reserve', methods=['POST'])
+@require_active_membership
 def reserve_book():
     data = request.get_json()
     user_id = data.get('user_id')
@@ -597,6 +618,7 @@ def get_book_details(book_id):
 
 #Member cancelling their membership
 @main.route('/cancel_membership', methods=['POST'])
+@require_active_membership
 def cancel_membership():
     user_id = session.get('user_id')
     if not user_id:
@@ -658,6 +680,7 @@ def overdue_transactions():
 
 #To enable profile edits for members
 @main.route('/profile', methods=['PUT'])
+@require_active_membership
 def edit_profile():
     user_id = session.get('user_id')
     if not user_id:

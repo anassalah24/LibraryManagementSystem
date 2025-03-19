@@ -45,7 +45,7 @@
     <!-- Active Transactions Section -->
     <div class="card">
       <div class="card-header">
-        Active Transactions
+        Transaction History
       </div>
       <div class="card-body" id="transactionsSection">
         <p>Loading active transactions...</p>
@@ -243,6 +243,13 @@
       loadReservations();
       loadInventory();
       loadOverdueTransactions();
+      // Add polling to refresh these sections every 3 seconds
+      setInterval(function() {
+      loadTransactions();
+      loadReservations();
+      loadInventory();
+      loadOverdueTransactions();
+      }, 3000);
     });
   </script>
 </body>

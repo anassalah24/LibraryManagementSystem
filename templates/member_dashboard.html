@@ -241,6 +241,12 @@
       loadLoans();
       loadReservations();
       loadBorrowingHistory(userId);
+      // Polling: Refresh loans, reservations, and borrowing history every 3 seconds
+      setInterval(function(){
+      loadLoans();
+      loadReservations();
+      loadBorrowingHistory(userId);
+      }, 3000);
 
       // Search functionality
       $('#searchForm').on('submit', function(e){

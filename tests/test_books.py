@@ -3,6 +3,7 @@ import pytest
 from datetime import datetime, timedelta
 from app import create_app, db
 from app.models import User, Book, BookCopy, Transaction
+from werkzeug.security import generate_password_hash
 
 @pytest.fixture
 def client():
@@ -278,6 +279,23 @@ def test_delete_book(client):
 
 def test_checkout_book(client):
     """Test checking out a book."""
+    # Create an active member user for testing
+    user = User(
+        username="test_member",
+        email="test_member@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    # Simulate user login by setting session variables
+    with client.session_transaction() as sess:
+        sess['user_id'] = user.id
+        sess['username'] = user.username
+        sess['role'] = user.role
+
     # Add a book first
     book_data = {
         "title": "Checkout Test Book",
@@ -290,11 +308,11 @@ def test_checkout_book(client):
     response = add_book(client, book_data)
     assert response.status_code == 201
 
-    # Checkout the book (assuming book_id is 1)
-    checkout_data = {"user_id": 1, "book_id": 1}
+    # Checkout the book using the logged-in user's ID
+    checkout_data = {"user_id": user.id, "book_id": 1}
     checkout_response = client.post(
-        "/checkout", 
-        data=json.dumps(checkout_data), 
+        "/checkout",
+        data=json.dumps(checkout_data),
         content_type="application/json"
     )
     assert checkout_response.status_code == 201
@@ -304,6 +322,23 @@ def test_checkout_book(client):
 
 def test_renew_book(client):
     """Test renewing a checked-out book."""
+    # Create an active member user for testing
+    user = User(
+        username="test_member",
+        email="test_member@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    # Simulate user login by setting session variables
+    with client.session_transaction() as sess:
+        sess['user_id'] = user.id
+        sess['username'] = user.username
+        sess['role'] = user.role
+
     # Add and checkout a book first
     book_data = {
         "title": "Renew Test Book",
@@ -313,11 +348,14 @@ def test_renew_book(client):
         "rack_location": "T1",
         "num_copies": 1
     }
-    add_book(client, book_data)
-    checkout_data = {"user_id": 1, "book_id": 1}
+    response = add_book(client, book_data)
+    assert response.status_code == 201
+
+    # Checkout the book using the active user's id
+    checkout_data = {"user_id": user.id, "book_id": 1}
     checkout_response = client.post(
-        "/checkout", 
-        data=json.dumps(checkout_data), 
+        "/checkout",
+        data=json.dumps(checkout_data),
         content_type="application/json"
     )
     assert checkout_response.status_code == 201
@@ -326,20 +364,37 @@ def test_renew_book(client):
     due_date_before = datetime.strptime(resp_data.get("due_date"), "%Y-%m-%d %H:%M:%S")
 
     # Renew the book
-    renew_data = {"transaction_id": transaction_id, "user_id": 1}
+    renew_data = {"transaction_id": transaction_id, "user_id": user.id}
     renew_response = client.post(
-        "/renew", 
-        data=json.dumps(renew_data), 
+        "/renew",
+        data=json.dumps(renew_data),
         content_type="application/json"
     )
     assert renew_response.status_code == 200
     renew_resp = json.loads(renew_response.data)
-    new_due_date = datetime.strptime(renew_resp.get("new_due_date"), "%Y-%m-%d %H:%M:%S")
+    new_due_date = datetime.strptime(renew_resp.get("new_due_date"), "%Y-%m-%d %H:%M:%S")    
     # Check that new due date is 10 days after the previous due date
     assert new_due_date == due_date_before + timedelta(days=10)
 
 def test_return_book(client):
     """Test returning a checked-out book."""
+    # Create an active member user for testing
+    user = User(
+        username="test_member",
+        email="test_member@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    # Simulate user login by setting session variables
+    with client.session_transaction() as sess:
+        sess['user_id'] = user.id
+        sess['username'] = user.username
+        sess['role'] = user.role
+
     # Add and checkout a book
     book_data = {
         "title": "Return Test Book",
@@ -349,23 +404,25 @@ def test_return_book(client):
         "rack_location": "T1",
         "num_copies": 1
     }
-    add_book(client, book_data)
-    checkout_data = {"user_id": 1, "book_id": 1}
+    response = add_book(client, book_data)
+    assert response.status_code == 201
+
+    checkout_data = {"user_id": user.id, "book_id": 1}
     checkout_response = client.post(
-        "/checkout", 
-        data=json.dumps(checkout_data), 
+        "/checkout",
+        data=json.dumps(checkout_data),
         content_type="application/json"
     )
     assert checkout_response.status_code == 201
     resp_data = json.loads(checkout_response.data)
-    # Assume book_copy_id is returned or is 1
+    # Assume book_copy_id is returned or defaults to 1
     book_copy_id = resp_data.get("book_copy_id", 1)
     
     # Return the book
-    return_data = {"user_id": 1, "book_copy_id": book_copy_id}
+    return_data = {"user_id": user.id, "book_copy_id": book_copy_id}
     return_response = client.post(
-        "/return", 
-        data=json.dumps(return_data), 
+        "/return",
+        data=json.dumps(return_data),
         content_type="application/json"
     )
     assert return_response.status_code == 200
@@ -374,7 +431,31 @@ def test_return_book(client):
 
 def test_reserve_book(client):
     """Test reserving a book when no copies are available."""
-    # Add a book
+    # Create two active member users for testing
+    user1 = User(
+        username="user1",
+        email="user1@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    user2 = User(
+        username="user2",
+        email="user2@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    db.session.add_all([user1, user2])
+    db.session.commit()
+
+    # Simulate user1 session for checking out the book
+    with client.session_transaction() as sess:
+        sess['user_id'] = user1.id
+        sess['username'] = user1.username
+        sess['role'] = user1.role
+
+    # Add a book with one copy
     book_data = {
         "title": "Reserve Test Book",
         "author": "Test Author",
@@ -383,39 +464,63 @@ def test_reserve_book(client):
         "rack_location": "T1",
         "num_copies": 1
     }
-    add_book(client, book_data)
-    
-    # Checkout the book so that no copies are available
-    checkout_data = {"user_id": 1, "book_id": 1}
+    response = add_book(client, book_data)
+    assert response.status_code == 201
+
+    # Checkout the book using user1 (so no copies are available)
+    checkout_data = {"user_id": user1.id, "book_id": 1}
     checkout_response = client.post(
-        "/checkout", 
-        data=json.dumps(checkout_data), 
+        "/checkout",
+        data=json.dumps(checkout_data),
         content_type="application/json"
     )
     assert checkout_response.status_code == 201
 
-    # Try to reserve the book with a different user (user_id: 2)
-    reserve_data = {"user_id": 2, "book_id": 1}
+    # Now simulate user2 session for reserving the book
+    with client.session_transaction() as sess:
+        sess['user_id'] = user2.id
+        sess['username'] = user2.username
+        sess['role'] = user2.role
+
+    reserve_data = {"user_id": user2.id, "book_id": 1}
     reserve_response = client.post(
-        "/reserve", 
-        data=json.dumps(reserve_data), 
+        "/reserve",
+        data=json.dumps(reserve_data),
         content_type="application/json"
     )
     assert reserve_response.status_code == 201
     reserve_resp = json.loads(reserve_response.data)
     assert "Reservation created successfully" in reserve_resp.get("message", "")
 
-    # Attempt to reserve again by the same user should fail
+    # Attempt to reserve again by user2 should fail
     reserve_response_dup = client.post(
-        "/reserve", 
-        data=json.dumps(reserve_data), 
+        "/reserve",
+        data=json.dumps(reserve_data),
         content_type="application/json"
     )
     assert reserve_response_dup.status_code == 400
+
     
 def test_reserve_book_with_available_copies(client):
     """Test that reserving a book fails when copies are available."""
-    # Add a book with at least one copy available
+    # Create an active member for testing (user2)
+    user = User(
+        username="user2",
+        email="user2@example.com",
+        password=generate_password_hash("password"),
+        role="member",
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    # Simulate session for user2
+    with client.session_transaction() as sess:
+        sess['user_id'] = user.id
+        sess['username'] = user.username
+        sess['role'] = user.role
+
+    # Add a book with at least one available copy
     book_data = {
         "title": "Available Book",
         "author": "Author Available",
@@ -424,16 +529,17 @@ def test_reserve_book_with_available_copies(client):
         "rack_location": "A1",
         "num_copies": 1
     }
-    add_book(client, book_data)
+    response = add_book(client, book_data)
+    assert response.status_code == 201
 
-    # Attempt to reserve the book with user_id 2 (assuming copies are available)
-    reserve_data = {"user_id": 2, "book_id": 1}
+    # Attempt to reserve the book using user2 (since a copy is available)
+    reserve_data = {"user_id": user.id, "book_id": 1}
     reserve_response = client.post(
         "/reserve",
         data=json.dumps(reserve_data),
         content_type="application/json"
     )
-    # Expecting a 400 status code with an error message indicating that copies are available
+    # Expect a 400 error because copies are available (should prompt checkout instead)
     assert reserve_response.status_code == 400
     resp_data = json.loads(reserve_response.data)
     assert "available" in resp_data.get("error", "").lower()
@@ -604,3 +710,65 @@ def test_overdue_transactions_endpoint(client):
     assert "Overdue Book 2" in titles
     assert "Not Overdue Book" not in titles
 
+
+def test_renew_overdue_transaction(client):
+    """
+    Test that attempting to renew an overdue transaction returns an error.
+    """
+    # Create a member user for testing
+    user = User(
+        username="test_member", 
+        email="test_member@example.com",
+        password=generate_password_hash("password"), 
+        role="member", 
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+    user_id = user.id
+
+    # Simulate user login by setting session variables
+    with client.session_transaction() as sess:
+        sess['user_id'] = user_id
+        sess['username'] = user.username
+        sess['role'] = user.role
+
+    # Create a book
+    book = Book(
+        title="Overdue Book for Renewal",
+        author="Test Author",
+        subject="Test Subject",
+        publication_date=datetime(2020, 1, 1).date(),
+        rack_location="A1"
+    )
+    db.session.add(book)
+    db.session.commit()
+
+    # Create a book copy
+    copy = BookCopy(book_id=book.id, unique_barcode=f"{book.id}-1", status="available")
+    db.session.add(copy)
+    db.session.commit()
+
+    # Simulate checkout: create a transaction with a due date that is already passed
+    past_due_date = datetime.utcnow() - timedelta(days=1)  # Overdue by 1 day
+    transaction = Transaction(
+        user_id=user_id,
+        book_copy_id=copy.id,
+        transaction_type='checkout',
+        date_issued=datetime.utcnow() - timedelta(days=10),
+        due_date=past_due_date
+    )
+    db.session.add(transaction)
+    # Mark the copy as checked-out
+    copy.status = 'checked-out'
+    db.session.commit()
+
+    # Attempt to renew the overdue transaction
+    renew_data = {
+        'transaction_id': transaction.id,
+        'user_id': user_id
+    }
+    response = client.post("/renew", data=json.dumps(renew_data), content_type="application/json")
+    assert response.status_code == 400
+    resp_data = json.loads(response.data)
+    assert 'Cannot renew an overdue transaction' in resp_data.get('error', ''), "Expected error for overdue renewal"

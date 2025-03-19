@@ -145,6 +145,10 @@
     $(document).ready(function(){
       // Initial load
       loadMembers();
+      // Polling: Refresh the members list every 3 seconds
+      setInterval(function() {
+        loadMembers();
+      }, 3000);
 
       // Handle Edit Member button click
       $(document).on('click', '.editMember', function(){

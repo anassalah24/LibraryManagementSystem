@@ -7,3 +7,4 @@ APScheduler
 pytest
 python-barcode
 Pillow
+functools
