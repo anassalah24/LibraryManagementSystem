@@ -3,19 +3,26 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.notify_overdue import notify_overdue_function
 
 # Initialize extensions
 db = SQLAlchemy()
 mail = Mail()
 
+from app.notify_overdue import notify_overdue_function
 
 def start_scheduler(app):
     scheduler = BackgroundScheduler()
-    # Schedule the overdue notification function to run every minute
-    scheduler.add_job(func=notify_overdue_function, trigger='interval', minutes=1)
+
+    # Wrap the notify_overdue_function call with the app context
+    def scheduled_notify_overdue_function():
+        with app.app_context():
+            notify_overdue_function()
+
+    # Schedule the function to run every minute
+    scheduler.add_job(func=scheduled_notify_overdue_function, trigger='interval', minutes=1)
     scheduler.start()
-    # Shut down the scheduler when exiting the app
+
+    # Ensure the scheduler shuts down when the app exits
     atexit.register(lambda: scheduler.shutdown())
 
 def create_app():
@@ -33,6 +40,6 @@ def create_app():
     app.register_blueprint(main)
     
     # Start the scheduler for background tasks
-    #start_scheduler(app)
+    start_scheduler(app)
     
     return app
