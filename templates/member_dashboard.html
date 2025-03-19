@@ -39,7 +39,7 @@
 
   <!-- Main Container -->
   <div class="container mt-4">
-    <h2>Welcome, {{ username }}!</h2>
+    <h2 id="greeting">Welcome, {{ username }}!</h2>
     <p>Your Member Dashboard</p>
     <!-- Error Message contained -->
     <div id="messageContainer" class="mt-3"></div>
@@ -412,6 +412,7 @@
           data: JSON.stringify(updatedData),
           success: function(response) {
             // Display a success message
+            $('#greeting').text('Welcome, ' + response.user.username + '!');
             alert(response.message);
             $('#editProfileModal').modal('hide');
           },

@@ -87,6 +87,11 @@ def register():
     db.session.add(new_user)
     db.session.commit()
     
+    # Set session variables to log the user in immediately
+    session['user_id'] = new_user.id
+    session['username'] = new_user.username
+    session['role'] = new_user.role
+    
     return jsonify({'message': 'User registered successfully'}), 201
 
 #Loads the login page
@@ -263,6 +268,15 @@ def checkout_book():
     if not user_id or not book_id:
         return jsonify({'error': 'Missing user_id or book_id'}), 400
 
+    # Check if the user already has an active transaction for this book
+    existing_tx = Transaction.query.join(BookCopy).filter(
+        Transaction.user_id == user_id,
+        BookCopy.book_id == book_id,
+        Transaction.date_returned == None
+    ).first()
+    if existing_tx:
+        return jsonify({'error': 'You already have an active transaction for this book.'}), 400
+
     # Count active (not returned) transactions for the user
     active_transactions = Transaction.query.filter_by(user_id=user_id, date_returned=None).count()
     if active_transactions >= 5:
@@ -341,6 +355,7 @@ def return_book():
 
     # Mark the transaction as returned
     transaction.date_returned = datetime.utcnow()
+    transaction.transaction_type = 'returned'  # Set transaction type to returned
 
     # Calculate fine if returned after due date (Here i use the logic of adding $1 per day overdue)
     fine = 0.0
@@ -437,6 +452,7 @@ def get_transactions():
             'transaction_id': tx.id,
             'book_title': tx.book_copy.book.title,
             'user_id': tx.user_id,
+            'book_copy_id': tx.book_copy_id,
             **user_details,
             'date_issued': tx.date_issued.strftime('%Y-%m-%d %H:%M:%S'),
             'due_date': tx.due_date.strftime('%Y-%m-%d %H:%M:%S'),

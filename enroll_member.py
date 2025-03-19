@@ -5,8 +5,8 @@ from werkzeug.security import generate_password_hash
 app = create_app()
 app.app_context().push()
 
-member_username = "member2"
-member_email = "member2@example.com"
+member_username = "Anas"
+member_email = "anas@gmail.com"
 member_password = "securepass"  # Replace with a strong password
 
 existing = User.query.filter((User.username == member_username) | (User.email == member_email)).first()
